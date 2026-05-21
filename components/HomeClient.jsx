@@ -98,6 +98,28 @@ function ShareIcon() {
   );
 }
 
+function GitaMargMark() {
+  return (
+    <svg className="gita-mark" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path
+        fill="currentColor"
+        d="M385 40c-61 0-110 42-122 99h-27c-63 0-114 51-114 114v13H70c-17 0-31 14-31 31s14 31 31 31h52v48H72c-17 0-31 14-31 31s14 31 31 31h159c69 0 125-56 125-125v-31h-62v31c0 35-28 63-63 63h-47v-48h22c63 0 114-51 114-114v-13h65c45 0 82-36 82-81s-37-80-82-80Zm-179 226h-22v-13c0-29 23-52 52-52h22v13c0 29-23 52-52 52Zm179-126h-59c10-22 32-38 59-38 11 0 20 8 20 18s-9 20-20 20Z"
+      />
+      <path
+        fill="currentColor"
+        d="M302 151h156c13 0 24 11 24 24s-11 24-24 24H302v-48Zm45 96h112c13 0 24 11 24 24s-11 24-24 24H347v-48Zm-11 96h122c13 0 24 11 24 24s-11 24-24 24H303c18-12 30-29 33-48Z"
+      />
+      <path
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="13"
+        d="M149 160c23-34 62-55 106-55m-60 144c27 0 48-22 48-48m-55 245c49 0 93-25 118-64m68-233c-17 4-32 12-44 25m39 121c18-15 43-24 71-24"
+        opacity="0.26"
+      />
+    </svg>
+  );
+}
+
 export default function HomeClient() {
   const [problem, setProblem] = useState("");
   const [verse, setVerse] = useState(null);
@@ -106,10 +128,15 @@ export default function HomeClient() {
   const [followup, setFollowup] = useState("");
   const [toast, setToast] = useState("");
   const [language, setLanguage] = useState("EN");
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
+  const [user, setUser] = useState(null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const textareaRef = useRef(null);
   const followupRef = useRef(null);
   const loaderRef = useRef(null);
   const toastTimerRef = useRef(null);
+  const userMenuRef = useRef(null);
   const supabase = useMemo(() => createSupabaseBrowser(), []);
 
   useEffect(() => {
@@ -139,6 +166,30 @@ export default function HomeClient() {
     return () => io.disconnect();
   }, []);
 
+  // Track auth state
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data }) => {
+      setUser(data?.session?.user ?? null);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, [supabase]);
+
+  // Close user menu on outside click
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    function handleClick(e) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+        setUserMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [userMenuOpen]);
+
   function showToast(message) {
     setToast(message);
     clearTimeout(toastTimerRef.current);
@@ -151,12 +202,25 @@ export default function HomeClient() {
       return;
     }
 
+    setSigningIn(true);
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
       },
     });
+    setSigningIn(false);
+  }
+
+  async function signOut() {
+    if (!supabase) return;
+    setUserMenuOpen(false);
+    await supabase.auth.signOut();
+    setUser(null);
+    setVerse(null);
+    setSaved(false);
+    setProblem("");
+    showToast("Signed out");
   }
 
   async function getGuidance(text) {
@@ -168,7 +232,7 @@ export default function HomeClient() {
     const data = await response.json();
 
     if (response.status === 401) {
-      await signIn();
+      setShowAuthModal(true);
       return null;
     }
 
@@ -177,6 +241,9 @@ export default function HomeClient() {
     }
 
     if (!response.ok) {
+      if (response.status === 500) {
+        console.error("API ERROR DETAILS:", data);
+      }
       throw new Error(data.message || "That didn't go through. Try again?");
     }
 
@@ -320,19 +387,66 @@ export default function HomeClient() {
   return (
     <>
       <div className="om-watermark" aria-hidden="true">
-        ॐ
+        <img src="/icon.webp" alt="" width="380" height="380" />
       </div>
 
       <header className="nav">
         <a className="brand" href="#top" aria-label="GitaMarg home">
-          <span className="om" aria-hidden="true">
-            ॐ
-          </span>
-          <span>GitaMarg</span>
+          <img src="/gitamarg.webp" alt="GitaMarg" className="brand-logo" />
         </a>
-        <a className="link" href="#how">
-          How it works
-        </a>
+        <div className="nav-right">
+          <a className="link" href="#how">How it works</a>
+          {user && (
+            <div className="user-menu-wrap" ref={userMenuRef}>
+              <button
+                className="user-avatar-btn"
+                onClick={() => setUserMenuOpen((o) => !o)}
+                aria-label="Account menu"
+                aria-expanded={userMenuOpen}
+              >
+                {user.user_metadata?.avatar_url ? (
+                  <img
+                    src={user.user_metadata.avatar_url}
+                    alt={user.user_metadata?.full_name || "User"}
+                    className="user-avatar-img"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <span className="user-avatar-fallback">
+                    {(user.user_metadata?.full_name || user.email || "U")[0].toUpperCase()}
+                  </span>
+                )}
+              </button>
+              {userMenuOpen && (
+                <div className="user-dropdown">
+                  <div className="user-dropdown-info">
+                    {user.user_metadata?.avatar_url && (
+                      <img
+                        src={user.user_metadata.avatar_url}
+                        alt=""
+                        className="user-dropdown-avatar"
+                        referrerPolicy="no-referrer"
+                      />
+                    )}
+                    <div>
+                      <p className="user-dropdown-name">{user.user_metadata?.full_name || "Seeker"}</p>
+                      <p className="user-dropdown-email">{user.email}</p>
+                    </div>
+                  </div>
+                  <div className="user-dropdown-divider" />
+                  <button className="user-dropdown-signout" onClick={signOut}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                      <polyline points="16 17 21 12 16 7" />
+                      <line x1="21" x2="9" y1="12" y2="12" />
+                    </svg>
+                    Sign out
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </header>
 
       <main id="top">
@@ -405,7 +519,6 @@ export default function HomeClient() {
                     ))}
                   </div>
                   <p className="roman">{verse.roman}</p>
-                  <p className="english">{verse.english}</p>
                 </div>
 
                 <div className="bubble bubble-translation assistant-tail" style={{ animationDelay: "200ms" }}>
@@ -490,12 +603,7 @@ export default function HomeClient() {
       <footer>
         <div className="footer-inner">
           <div className="brand-mini">
-            <span className="om" aria-hidden="true">
-              ॐ
-            </span>
-            <span className="brand-text">
-              Gita<span className="brand-accent">Marg</span>
-            </span>
+            <img src="/gitamarg.webp" alt="GitaMarg" className="brand-logo-footer" />
           </div>
           <p className="credit">Rooted in the Bhagavad Gita. Built with reverence.</p>
           <div className="lang" role="group" aria-label="Language">
@@ -508,6 +616,37 @@ export default function HomeClient() {
           </div>
         </div>
       </footer>
+
+      {showAuthModal && (
+        <div className="auth-backdrop" role="dialog" aria-modal="true" aria-label="Sign in" onClick={(e) => { if (e.target === e.currentTarget) setShowAuthModal(false); }}>
+          <div className="auth-modal">
+            <button className="auth-modal-close" aria-label="Close" onClick={() => setShowAuthModal(false)}>✕</button>
+
+            <img src="/gitamarg.webp" alt="GitaMarg" className="auth-modal-logo" />
+
+            <h2 className="auth-modal-title">Seek the Gita's guidance</h2>
+            <p className="auth-modal-sub">
+              Sign in to receive a personalised shlok and guidance rooted in 5,000 years of wisdom.
+            </p>
+
+            <button
+              className="auth-google-btn"
+              onClick={signIn}
+              disabled={signingIn}
+            >
+              <svg className="auth-google-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+              </svg>
+              {signingIn ? "Redirecting…" : "Continue with Google"}
+            </button>
+
+            <p className="auth-modal-note">Free · No credit card required</p>
+          </div>
+        </div>
+      )}
 
       <div className={toast ? "toast is-visible" : "toast"} role="status" aria-live="polite">
         {toast}

@@ -109,12 +109,8 @@ export async function POST(request) {
       plan: profile.plan,
     });
   } catch (error) {
-    const message =
-      error?.message === "GEMINI_API_KEY is not configured." ||
-      error?.message === "Supabase service credentials are not configured."
-        ? error.message
-        : "Could not generate guidance right now.";
-
+    console.error("[Gita API Error]:", error);
+    const message = error?.message || "Unknown error";
     return Response.json({ error: "SERVER_ERROR", message }, { status: 500 });
   }
 }
