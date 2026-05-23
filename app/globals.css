@@ -328,11 +328,10 @@ textarea.problem::placeholder {
   display: flex;
 }
 
-.loader .om {
-  font-family: var(--font-deva);
-  font-size: 112px;
-  line-height: 1;
-  color: var(--color-primary);
+.loader .om-icon {
+  width: 112px;
+  height: 112px;
+  object-fit: contain;
   animation: omPulse 1.4s ease-in-out infinite;
   transform-origin: center;
 }

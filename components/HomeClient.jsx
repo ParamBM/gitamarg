@@ -583,9 +583,7 @@ export default function HomeClient() {
           </div>
 
           <div className={loading ? "loader is-active" : "loader"} ref={loaderRef} aria-live="polite">
-            <span className="om" aria-hidden="true">
-              ॐ
-            </span>
+            <img className="om-icon" src="/icon.webp" alt="" aria-hidden="true" width="120" height="120" />
             <span className="label">The Gita is listening…</span>
           </div>
 
@@ -707,7 +705,7 @@ export default function HomeClient() {
 
             <img src="/gitamarg.webp" alt="GitaMarg" className="auth-modal-logo" />
 
-            <h2 className="auth-modal-title">Seek the Gita's guidance</h2>
+            <h2 className="auth-modal-title">Seek the Gita&apos;s guidance</h2>
             <p className="auth-modal-sub">
               Sign in to receive a personalised shlok and guidance rooted in 5,000 years of wisdom.
             </p>
