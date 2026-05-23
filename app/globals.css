@@ -859,7 +859,7 @@ footer .credit {
   }
 }
 
-/* ─── Nav User Avatar & Dropdown ───────────────────────── */
+/* Nav User Avatar & Dropdown */
 
 .nav-right {
   display: flex;
@@ -1000,7 +1000,7 @@ footer .credit {
   color: var(--color-primary);
 }
 
-/* ─── Auth Modal ─────────────────────────────────────────── */
+/* Auth Modal */
 
 .auth-backdrop {
   position: fixed;

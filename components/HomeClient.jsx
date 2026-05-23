@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createSupabaseBrowser, hasSupabaseEnv } from "@/lib/supabase";
 
+const appOrigin = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+
 function autosize(element) {
   if (!element) return;
   element.style.height = "auto";
@@ -206,7 +208,7 @@ export default function HomeClient() {
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${appOrigin || window.location.origin}/auth/callback`,
       },
     });
     setSigningIn(false);
