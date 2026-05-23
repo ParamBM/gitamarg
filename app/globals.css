@@ -871,6 +871,29 @@ footer .credit {
   position: relative;
 }
 
+.login-nav-btn {
+  height: 36px;
+  padding: 0 18px;
+  border: 1.5px solid var(--color-primary);
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #fff8ec;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.15s ease;
+}
+
+.login-nav-btn:hover {
+  background: transparent;
+  color: var(--color-primary);
+  transform: translateY(-1px);
+}
+
 .user-avatar-btn {
   width: 36px;
   height: 36px;

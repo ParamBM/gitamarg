@@ -460,7 +460,7 @@ export default function HomeClient() {
         </a>
         <div className="nav-right">
           <a className="link" href="#how">How it works</a>
-          {user && (
+          {user ? (
             <div className="user-menu-wrap" ref={userMenuRef}>
               <button
                 className="user-avatar-btn"
@@ -520,6 +520,14 @@ export default function HomeClient() {
                 </div>
               )}
             </div>
+          ) : (
+            <button
+              className="login-nav-btn"
+              type="button"
+              onClick={() => setShowAuthModal(true)}
+            >
+              Login
+            </button>
           )}
         </div>
       </header>
