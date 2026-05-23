@@ -769,7 +769,7 @@ footer .credit {
   transition:
     opacity 0.2s ease,
     transform 0.2s ease;
-  z-index: 100;
+  z-index: 300;
 }
 
 .toast.is-visible {
