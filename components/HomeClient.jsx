@@ -132,7 +132,10 @@ export default function HomeClient() {
   const [language, setLanguage] = useState("EN");
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
+  const [emailSigningIn, setEmailSigningIn] = useState(false);
+  const [authEmail, setAuthEmail] = useState("");
   const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const textareaRef = useRef(null);
   const followupRef = useRef(null);
@@ -180,6 +183,30 @@ export default function HomeClient() {
     return () => subscription.unsubscribe();
   }, [supabase]);
 
+  useEffect(() => {
+    if (!supabase || !user) {
+      setProfile(null);
+      return;
+    }
+
+    let alive = true;
+
+    supabase
+      .from("users")
+      .select("role, plan")
+      .eq("id", user.id)
+      .single()
+      .then(({ data }) => {
+        if (alive) {
+          setProfile(data || null);
+        }
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [supabase, user]);
+
   // Close user menu on outside click
   useEffect(() => {
     if (!userMenuOpen) return;
@@ -214,11 +241,44 @@ export default function HomeClient() {
     setSigningIn(false);
   }
 
+  async function signInWithEmail(event) {
+    event.preventDefault();
+
+    if (!hasSupabaseEnv() || !supabase) {
+      showToast("That didn't go through. Try again?");
+      return;
+    }
+
+    const email = authEmail.trim();
+
+    if (!email) {
+      showToast("Enter your email");
+      return;
+    }
+
+    setEmailSigningIn(true);
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${appOrigin || window.location.origin}/auth/callback`,
+      },
+    });
+    setEmailSigningIn(false);
+
+    if (error) {
+      showToast(error.message || "That didn't go through. Try again?");
+      return;
+    }
+
+    showToast("Check your email");
+  }
+
   async function signOut() {
     if (!supabase) return;
     setUserMenuOpen(false);
     await supabase.auth.signOut();
     setUser(null);
+    setProfile(null);
     setVerse(null);
     setSaved(false);
     setProblem("");
@@ -386,6 +446,8 @@ export default function HomeClient() {
     startGuidance(clean);
   }
 
+  const isAdmin = profile?.role === "admin";
+
   return (
     <>
       <div className="om-watermark" aria-hidden="true">
@@ -436,6 +498,17 @@ export default function HomeClient() {
                     </div>
                   </div>
                   <div className="user-dropdown-divider" />
+                  {isAdmin && (
+                    <a className="user-dropdown-link" href="/admin">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="3" width="7" height="7" />
+                        <rect x="14" y="3" width="7" height="7" />
+                        <rect x="14" y="14" width="7" height="7" />
+                        <rect x="3" y="14" width="7" height="7" />
+                      </svg>
+                      Dashboard
+                    </a>
+                  )}
                   <button className="user-dropdown-signout" onClick={signOut}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -644,6 +717,24 @@ export default function HomeClient() {
               </svg>
               {signingIn ? "Redirecting…" : "Continue with Google"}
             </button>
+
+            <div className="auth-divider"><span>or</span></div>
+
+            <form className="auth-email-form" onSubmit={signInWithEmail}>
+              <label className="auth-email-label" htmlFor="auth-email">Email address</label>
+              <input
+                id="auth-email"
+                className="auth-email-input"
+                type="email"
+                value={authEmail}
+                onChange={(event) => setAuthEmail(event.target.value)}
+                placeholder="you@example.com"
+                autoComplete="email"
+              />
+              <button className="auth-email-btn" type="submit" disabled={emailSigningIn}>
+                {emailSigningIn ? "Sending link..." : "Continue with email"}
+              </button>
+            </form>
 
             <p className="auth-modal-note">Free · No credit card required</p>
           </div>

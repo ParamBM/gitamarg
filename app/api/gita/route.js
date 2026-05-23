@@ -33,6 +33,7 @@ export async function POST(request) {
     const admin = getSupabaseAdmin();
     const profile = await ensureUserProfile(user);
     const isPaid = profile.plan === "monthly" || profile.plan === "annual";
+    const isAdmin = profile.role === "admin";
     let quota = {
       allowed: true,
       used: 0,
@@ -40,7 +41,7 @@ export async function POST(request) {
       is_day_one: false,
     };
 
-    if (!isPaid) {
+    if (!isPaid && !isAdmin) {
       const { data, error } = await admin.rpc("check_and_increment_quota", {
         p_user_id: user.id,
       });
