@@ -81,7 +81,7 @@ export async function POST(request) {
         meaning_hindi: shloka.meaning_hindi,
         advice,
       })
-      .select("id")
+      .select("id,created_at,is_bookmarked,is_shared")
       .single();
 
     if (saveError) {
@@ -98,6 +98,7 @@ export async function POST(request) {
 
     return Response.json({
       guidanceId: saved.id,
+      problem_text: cleanProblem,
       chapter: shloka.chapter,
       verse: shloka.verse,
       sanskrit: shloka.sanskrit,
@@ -106,6 +107,9 @@ export async function POST(request) {
       translation: shloka.translation || shloka.meaning_english,
       meaning_hindi: isPaid ? shloka.meaning_hindi : null,
       advice,
+      is_bookmarked: saved.is_bookmarked,
+      is_shared: saved.is_shared,
+      created_at: saved.created_at,
       quota,
       plan: profile.plan,
     });

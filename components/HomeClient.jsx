@@ -11,25 +11,104 @@ function autosize(element) {
   element.style.height = `${Math.max(110, element.scrollHeight)}px`;
 }
 
-function splitGuidance(text) {
-  return String(text || "")
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.trim())
+function parseGuidance(text) {
+  const lines = String(text || "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
     .filter(Boolean);
+  const sections = [];
+  let current = { title: "", blocks: [] };
+
+  function pushCurrent() {
+    if (current.title || current.blocks.length) {
+      sections.push(current);
+    }
+  }
+
+  for (const line of lines) {
+    const heading = line.match(/^(What this shlok is showing you|How it applies to your situation|Call to action)$/i);
+    const bullet = line.match(/^[-*]\s+(.+)/);
+
+    if (heading) {
+      pushCurrent();
+      current = { title: heading[1], blocks: [] };
+      continue;
+    }
+
+    if (bullet) {
+      const last = current.blocks[current.blocks.length - 1];
+      if (last?.type === "list") {
+        last.items.push(bullet[1]);
+      } else {
+        current.blocks.push({ type: "list", items: [bullet[1]] });
+      }
+      continue;
+    }
+
+    current.blocks.push({ type: "paragraph", text: line });
+  }
+
+  pushCurrent();
+
+  if (!sections.length) {
+    return [
+      {
+        title: "",
+        blocks: String(text || "")
+          .split(/\n{2,}/)
+          .map((paragraph) => paragraph.trim())
+          .filter(Boolean)
+          .map((paragraph) => ({ type: "paragraph", text: paragraph })),
+      },
+    ];
+  }
+
+  return sections;
 }
 
 function toGuidance(data) {
   return {
-    id: data.guidanceId,
+    id: data.guidanceId || data.id,
+    problem: data.problem_text || data.problem || "",
     chapter: data.chapter,
     verse: data.verse,
     deva: data.sanskrit,
     roman: data.transliteration,
     english: data.meaning_english,
     translation: data.translation || data.meaning_english,
-    guidance: splitGuidance(data.advice),
+    advice: data.advice || "",
+    guidance: parseGuidance(data.advice),
+    saved: Boolean(data.is_bookmarked),
+    shared: Boolean(data.is_shared),
+    createdAt: data.created_at || null,
     plan: data.plan || "free",
   };
+}
+
+function shortProblem(text) {
+  const clean = String(text || "Untitled guidance").replace(/\s+/g, " ").trim();
+  return clean.length > 62 ? `${clean.slice(0, 59)}...` : clean;
+}
+
+function formatHistoryDate(value) {
+  if (!value) return "";
+
+  const date = new Date(value);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+
+  if (isToday) {
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+
+  if (date.toDateString() === yesterday.toDateString()) {
+    return "Yesterday";
+  }
+
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
 function BookOpenIcon() {
@@ -67,6 +146,44 @@ function MessageSquareIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function StarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+    </svg>
+  );
+}
+
+function QuillIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 3C20 3 14 5 12 12C10 19 8 21 8 21" />
+      <path d="M20 3C17 3 10 6 8 13" />
+      <path d="M8 21C8 21 6.5 16 9 13C11.5 10 20 3 20 3" />
+      <path d="M8 21L5 22" />
+      <path d="M9 16L6 17" />
+    </svg>
+  );
+}
+
+function SidebarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
     </svg>
   );
 }
@@ -137,11 +254,17 @@ export default function HomeClient() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [activeHistoryId, setActiveHistoryId] = useState(null);
   const textareaRef = useRef(null);
   const followupRef = useRef(null);
   const loaderRef = useRef(null);
   const toastTimerRef = useRef(null);
   const userMenuRef = useRef(null);
+  const sidebarRef = useRef(null);
+  const swipeRef = useRef(null);
   const supabase = useMemo(() => createSupabaseBrowser(), []);
 
   useEffect(() => {
@@ -186,6 +309,8 @@ export default function HomeClient() {
   useEffect(() => {
     if (!supabase || !user) {
       setProfile(null);
+      setHistory([]);
+      setActiveHistoryId(null);
       return;
     }
 
@@ -207,6 +332,48 @@ export default function HomeClient() {
     };
   }, [supabase, user]);
 
+  useEffect(() => {
+    if (!user) return;
+
+    let alive = true;
+
+    async function loadHistory() {
+      setHistoryLoading(true);
+
+      try {
+        const response = await fetch("/api/history");
+
+        if (response.status === 401) {
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error("Could not load history.");
+        }
+
+        const data = await response.json();
+
+        if (alive) {
+          setHistory(data.history || []);
+        }
+      } catch {
+        if (alive) {
+          showToast("History did not load");
+        }
+      } finally {
+        if (alive) {
+          setHistoryLoading(false);
+        }
+      }
+    }
+
+    loadHistory();
+
+    return () => {
+      alive = false;
+    };
+  }, [user]);
+
   // Close user menu on outside click
   useEffect(() => {
     if (!userMenuOpen) return;
@@ -218,6 +385,132 @@ export default function HomeClient() {
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [userMenuOpen]);
+
+  // Mobile swipe-to-open / swipe-to-close sidebar
+  useEffect(() => {
+    const sidebar = sidebarRef.current;
+    if (!sidebar) return;
+
+    // Only activate on touch devices
+    const SWIPE_EDGE_WIDTH = 24; // px from left edge that triggers open swipe
+    const SIDEBAR_WIDTH = sidebar.offsetWidth || 312;
+    const CLOSE_THRESHOLD = 0.4; // fraction of sidebar width to trigger close
+    const OPEN_THRESHOLD = 0.3;  // fraction of sidebar width to trigger open
+    const VELOCITY_THRESHOLD = 0.5; // px/ms
+
+    let startX = 0;
+    let startY = 0;
+    let currentX = 0;
+    let startTime = 0;
+    let isDragging = false;
+    let isOpen = false;
+    let lockAxis = null; // 'h' | 'v' | null
+
+    // Keep a live ref to historyOpen so touch handlers always see the latest value
+    swipeRef.current = { isOpen };
+
+    function isMobile() {
+      return window.innerWidth <= 900;
+    }
+
+    function applyDrag(deltaX) {
+      const w = sidebar.offsetWidth || SIDEBAR_WIDTH;
+      let tx;
+      if (isOpen) {
+        // dragging left to close: clamp 0..(-w)
+        tx = Math.min(0, Math.max(-w, deltaX));
+      } else {
+        // dragging right to open: clamp (-w)..0, starting from -w
+        tx = Math.min(0, Math.max(-w, -w + deltaX));
+      }
+      sidebar.style.transition = "none";
+      sidebar.style.transform = `translateX(${tx}px)`;
+      sidebar.style.opacity = isOpen
+        ? String(1 + tx / w)
+        : String(1 + (tx + w) / w);
+    }
+
+    function resetSidebar(open) {
+      sidebar.style.transition = "";
+      sidebar.style.transform = "";
+      sidebar.style.opacity = "";
+      setHistoryOpen(open);
+    }
+
+    function onTouchStart(e) {
+      if (!isMobile()) return;
+      const touch = e.touches[0];
+      startX = touch.clientX;
+      startY = touch.clientY;
+      startTime = Date.now();
+      currentX = startX;
+      lockAxis = null;
+
+      // Read live open state from the class on app-shell
+      isOpen = document.querySelector(".app-shell")?.classList.contains("history-is-open") ?? false;
+
+      // Only allow open swipe from left edge, or close swipe on sidebar itself
+      const fromEdge = startX <= SWIPE_EDGE_WIDTH;
+      const onSidebar = e.target.closest(".chat-sidebar");
+      if (!isOpen && !fromEdge) return;
+      if (isOpen && !onSidebar) return;
+
+      isDragging = true;
+    }
+
+    function onTouchMove(e) {
+      if (!isDragging) return;
+      const touch = e.touches[0];
+      currentX = touch.clientX;
+      const dx = currentX - startX;
+      const dy = touch.clientY - startY;
+
+      // Lock axis after 6px of movement
+      if (!lockAxis) {
+        if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
+          lockAxis = Math.abs(dx) >= Math.abs(dy) ? "h" : "v";
+        }
+      }
+      if (lockAxis !== "h") return;
+
+      e.preventDefault();
+      applyDrag(dx);
+    }
+
+    function onTouchEnd() {
+      if (!isDragging) return;
+      isDragging = false;
+      if (lockAxis !== "h") return;
+
+      const dx = currentX - startX;
+      const dt = Date.now() - startTime;
+      const velocity = Math.abs(dx) / dt;
+      const w = sidebar.offsetWidth || SIDEBAR_WIDTH;
+
+      const fastSwipe = velocity > VELOCITY_THRESHOLD;
+
+      if (isOpen) {
+        // Close if swiped left enough or fast enough
+        const shouldClose = dx < -(w * CLOSE_THRESHOLD) || (fastSwipe && dx < 0);
+        resetSidebar(!shouldClose);
+      } else {
+        // Open if swiped right enough or fast enough
+        const shouldOpen = dx > w * OPEN_THRESHOLD || (fastSwipe && dx > 0);
+        resetSidebar(shouldOpen);
+      }
+    }
+
+    document.addEventListener("touchstart", onTouchStart, { passive: true });
+    document.addEventListener("touchmove", onTouchMove, { passive: false });
+    document.addEventListener("touchend", onTouchEnd, { passive: true });
+
+    return () => {
+      document.removeEventListener("touchstart", onTouchStart);
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", onTouchEnd);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function showToast(message) {
     setToast(message);
@@ -282,6 +575,9 @@ export default function HomeClient() {
     setVerse(null);
     setSaved(false);
     setProblem("");
+    setHistory([]);
+    setActiveHistoryId(null);
+    setHistoryOpen(false);
     showToast("Signed out");
   }
 
@@ -331,6 +627,26 @@ export default function HomeClient() {
 
       if (data) {
         setVerse(data);
+        setActiveHistoryId(data.id);
+        setHistory((items) => {
+          const withoutCurrent = items.filter((item) => item.id !== data.id);
+          return [
+            {
+              id: data.id,
+              problem_text: text,
+              chapter: data.chapter,
+              verse: data.verse,
+              sanskrit: data.deva,
+              transliteration: data.roman,
+              meaning_english: data.english,
+              advice: data.advice,
+              is_bookmarked: data.saved,
+              is_shared: data.shared,
+              created_at: data.createdAt || new Date().toISOString(),
+            },
+            ...withoutCurrent,
+          ].slice(0, 50);
+        });
       }
     } catch (error) {
       showToast(error.message || "That didn't go through. Try again?");
@@ -358,13 +674,33 @@ export default function HomeClient() {
     }
   }
 
+  function closeSidebarOnMobile() {
+    if (window.innerWidth <= 900) {
+      setHistoryOpen(false);
+    }
+  }
+
   function askAnother() {
     setProblem("");
     setFollowup("");
     setVerse(null);
     setSaved(false);
+    setActiveHistoryId(null);
+    closeSidebarOnMobile();
     window.scrollTo({ top: 0, behavior: "smooth" });
     setTimeout(() => textareaRef.current?.focus(), 250);
+  }
+
+  function openHistoryItem(item) {
+    const restored = toGuidance(item);
+
+    setVerse(restored);
+    setProblem(item.problem_text || "");
+    setFollowup("");
+    setSaved(Boolean(item.is_bookmarked));
+    setActiveHistoryId(item.id);
+    closeSidebarOnMobile();
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function saveShlok() {
@@ -392,6 +728,11 @@ export default function HomeClient() {
     }
 
     setSaved(true);
+    setHistory((items) =>
+      items.map((item) =>
+        item.id === verse.id ? { ...item, is_bookmarked: true } : item
+      )
+    );
     showToast("Shlok saved");
   }
 
@@ -413,6 +754,14 @@ export default function HomeClient() {
       if (marker.status === 402) {
         showToast("Upgrade required");
         return;
+      }
+
+      if (marker.ok) {
+        setHistory((items) =>
+          items.map((item) =>
+            item.id === verse.id ? { ...item, is_shared: true } : item
+          )
+        );
       }
     }
 
@@ -450,85 +799,160 @@ export default function HomeClient() {
 
   return (
     <>
-      <div className="om-watermark" aria-hidden="true">
+      <div className={historyOpen ? "om-watermark history-shifted" : "om-watermark"} aria-hidden="true">
         <img src="/icon.webp" alt="" width="380" height="380" />
       </div>
 
+      <div className={historyOpen ? "app-shell history-is-open" : "app-shell"}>
+        <aside className="chat-sidebar" aria-label="Chat history" ref={sidebarRef}>
+          <div className="chat-sidebar-head">
+            <a className="chat-sidebar-brand" href="#top" aria-label="GitaMarg home">
+              <img src="/gitamarg.webp" alt="GitaMarg" />
+            </a>
+            {user ? (
+              <div className="user-menu-wrap" ref={userMenuRef}>
+                <button
+                  className="sidebar-avatar-btn"
+                  onClick={() => setUserMenuOpen((o) => !o)}
+                  aria-label="Account menu"
+                  aria-expanded={userMenuOpen}
+                >
+                  {user.user_metadata?.avatar_url ? (
+                    <img
+                      src={user.user_metadata.avatar_url}
+                      alt={user.user_metadata?.full_name || "User"}
+                      className="user-avatar-img"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <span className="user-avatar-fallback">
+                      {(user.user_metadata?.full_name || user.email || "U")[0].toUpperCase()}
+                    </span>
+                  )}
+                </button>
+                {userMenuOpen && (
+                  <div className="user-dropdown sidebar-user-dropdown">
+                    <div className="user-dropdown-info">
+                      {user.user_metadata?.avatar_url && (
+                        <img
+                          src={user.user_metadata.avatar_url}
+                          alt=""
+                          className="user-dropdown-avatar"
+                          referrerPolicy="no-referrer"
+                        />
+                      )}
+                      <div>
+                        <p className="user-dropdown-name">{user.user_metadata?.full_name || "Seeker"}</p>
+                        <p className="user-dropdown-email">{user.email}</p>
+                      </div>
+                    </div>
+                    <div className="user-dropdown-divider" />
+                    {isAdmin && (
+                      <a className="user-dropdown-link" href="/admin">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="3" width="7" height="7" />
+                          <rect x="14" y="3" width="7" height="7" />
+                          <rect x="14" y="14" width="7" height="7" />
+                          <rect x="3" y="14" width="7" height="7" />
+                        </svg>
+                        Dashboard
+                      </a>
+                    )}
+                    <button className="user-dropdown-signout" onClick={signOut}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                        <polyline points="16 17 21 12 16 7" />
+                        <line x1="21" x2="9" y1="12" y2="12" />
+                      </svg>
+                      Sign out
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                className="login-nav-btn sidebar-login-btn"
+                type="button"
+                onClick={() => setShowAuthModal(true)}
+              >
+                Login
+              </button>
+            )}
+          </div>
+
+          <button type="button" className="new-chat-fab" onClick={askAnother} aria-label="New guidance">
+            <PlusIcon /> New guidance
+          </button>
+
+          <div className="sidebar-quick-actions">
+            <button type="button" className="quick-action-btn" aria-label="Upgrade Plan">
+              <div className="quick-action-icon"><StarIcon /></div>
+              <span className="quick-action-label">Upgrade</span>
+            </button>
+            <button type="button" className="quick-action-btn" aria-label="Saved Chats">
+              <div className="quick-action-icon"><BookmarkIcon /></div>
+              <span className="quick-action-label">Saved</span>
+            </button>
+            <button type="button" className="quick-action-btn" aria-label="Shlokas Library">
+              <div className="quick-action-icon"><BookOpenIcon /></div>
+              <span className="quick-action-label">Library</span>
+            </button>
+            <button type="button" className="quick-action-btn" aria-label="Switch Language">
+              <div className="quick-action-icon"><LanguagesIcon /></div>
+              <span className="quick-action-label">Language</span>
+            </button>
+          </div>
+
+          <div className="history-block">
+            <p className="history-label">Recent guidance</p>
+            {!user ? (
+              <div className="history-empty">
+                <p>Your guidance history appears here after you sign in.</p>
+              </div>
+            ) : historyLoading ? (
+              <div className="history-status">Loading history...</div>
+            ) : history.length ? (
+              <nav className="history-list">
+                {history.map((item) => (
+                  <button
+                    type="button"
+                    key={item.id}
+                    className={activeHistoryId === item.id ? "history-item is-active" : "history-item"}
+                    onClick={() => openHistoryItem(item)}
+                  >
+                    <span className="history-title">{shortProblem(item.problem_text)}</span>
+                    <span className="history-meta">
+                      Gita {item.chapter}.{item.verse}
+                      {item.is_bookmarked ? " · Saved" : ""}
+                      <span>{formatHistoryDate(item.created_at)}</span>
+                    </span>
+                  </button>
+                ))}
+              </nav>
+            ) : (
+              <div className="history-empty">
+                <p>What is on your mind?</p>
+              </div>
+            )}
+          </div>
+        </aside>
+
+        <div className="app-content">
       <header className="nav">
+        <button
+          type="button"
+          className="sidebar-toggle"
+          onClick={() => setHistoryOpen((open) => !open)}
+          aria-label="Toggle history"
+          aria-expanded={historyOpen}
+        >
+          <SidebarIcon />
+        </button>
         <a className="brand" href="#top" aria-label="GitaMarg home">
           <img src="/gitamarg.webp" alt="GitaMarg" className="brand-logo" />
         </a>
         <div className="nav-right">
           <a className="link" href="#how">How it works</a>
-          {user ? (
-            <div className="user-menu-wrap" ref={userMenuRef}>
-              <button
-                className="user-avatar-btn"
-                onClick={() => setUserMenuOpen((o) => !o)}
-                aria-label="Account menu"
-                aria-expanded={userMenuOpen}
-              >
-                {user.user_metadata?.avatar_url ? (
-                  <img
-                    src={user.user_metadata.avatar_url}
-                    alt={user.user_metadata?.full_name || "User"}
-                    className="user-avatar-img"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <span className="user-avatar-fallback">
-                    {(user.user_metadata?.full_name || user.email || "U")[0].toUpperCase()}
-                  </span>
-                )}
-              </button>
-              {userMenuOpen && (
-                <div className="user-dropdown">
-                  <div className="user-dropdown-info">
-                    {user.user_metadata?.avatar_url && (
-                      <img
-                        src={user.user_metadata.avatar_url}
-                        alt=""
-                        className="user-dropdown-avatar"
-                        referrerPolicy="no-referrer"
-                      />
-                    )}
-                    <div>
-                      <p className="user-dropdown-name">{user.user_metadata?.full_name || "Seeker"}</p>
-                      <p className="user-dropdown-email">{user.email}</p>
-                    </div>
-                  </div>
-                  <div className="user-dropdown-divider" />
-                  {isAdmin && (
-                    <a className="user-dropdown-link" href="/admin">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="3" y="3" width="7" height="7" />
-                        <rect x="14" y="3" width="7" height="7" />
-                        <rect x="14" y="14" width="7" height="7" />
-                        <rect x="3" y="14" width="7" height="7" />
-                      </svg>
-                      Dashboard
-                    </a>
-                  )}
-                  <button className="user-dropdown-signout" onClick={signOut}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                      <polyline points="16 17 21 12 16 7" />
-                      <line x1="21" x2="9" y1="12" y2="12" />
-                    </svg>
-                    Sign out
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <button
-              className="login-nav-btn"
-              type="button"
-              onClick={() => setShowAuthModal(true)}
-            >
-              Login
-            </button>
-          )}
         </div>
       </header>
 
@@ -613,8 +1037,21 @@ export default function HomeClient() {
                   <div className="eyebrow">
                     <CompassIcon /> Your Path Forward
                   </div>
-                  {verse.guidance.map((paragraph) => (
-                    <p key={paragraph}>{paragraph}</p>
+                  {verse.guidance.map((section, sectionIndex) => (
+                    <section className="guidance-section" key={`${section.title}-${sectionIndex}`}>
+                      {section.title ? <h3>{section.title}</h3> : null}
+                      {section.blocks.map((block, blockIndex) =>
+                        block.type === "list" ? (
+                          <ul key={`list-${blockIndex}`} className="guidance-actions">
+                            {block.items.map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p key={`paragraph-${blockIndex}`}>{block.text}</p>
+                        )
+                      )}
+                    </section>
                   ))}
                 </div>
 
@@ -697,6 +1134,8 @@ export default function HomeClient() {
           </div>
         </div>
       </footer>
+        </div>
+      </div>
 
       {showAuthModal && (
         <div className="auth-backdrop" role="dialog" aria-modal="true" aria-label="Sign in" onClick={(e) => { if (e.target === e.currentTarget) setShowAuthModal(false); }}>

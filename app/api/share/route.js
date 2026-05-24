@@ -22,8 +22,9 @@ export async function POST(request) {
     const admin = getSupabaseAdmin();
     const profile = await ensureUserProfile(user);
     const isPaid = profile.plan === "monthly" || profile.plan === "annual";
+    const isAdmin = profile.role === "admin";
 
-    if (!isPaid) {
+    if (!isPaid && !isAdmin) {
       return Response.json({ error: "PAYWALL_REQUIRED" }, { status: 402 });
     }
 
